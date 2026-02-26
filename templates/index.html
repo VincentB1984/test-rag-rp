@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Assistant Recensement</title>
+  <style>
+    /* ── Reset & Variables ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bleu-rf:    #003189;
+      --bleu-clair: #e8edf8;
+      --rouge-rf:   #e1000f;
+      --gris-fond:  #f5f6fa;
+      --gris-bord:  #dde1ea;
+      --blanc:      #ffffff;
+      --texte:      #1a1a2e;
+      --texte-sec:  #6b7280;
+      --rag-bg:     #e8f4fd;
+      --rag-bord:   #3b82f6;
+      --web-bg:     #e8fdf0;
+      --web-bord:   #10b981;
+      --llm-bg:     #fdf3e8;
+      --llm-bord:   #f59e0b;
+      --radius:     12px;
+      --shadow:     0 2px 12px rgba(0,0,0,0.08);
+    }
+
+    body {
+      font-family: "Marianne", "Segoe UI", Arial, sans-serif;
+      background: var(--gris-fond);
+      color: var(--texte);
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── En-tête ── */
+    header {
+      background: var(--bleu-rf);
+      color: var(--blanc);
+      padding: 0 24px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .logo-rf {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      border-right: 1px solid rgba(255,255,255,0.3);
+      padding-right: 16px;
+    }
+
+    .logo-rf .bande {
+      width: 4px;
+      height: 32px;
+      background: linear-gradient(to bottom, #002395 33%, var(--blanc) 33%, var(--blanc) 66%, var(--rouge-rf) 66%);
+      border-radius: 2px;
+    }
+
+    header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      flex: 1;
+    }
+
+    .badge-statut {
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+    }
+
+    .badge-statut.pret { background: rgba(16,185,129,0.25); border-color: #10b981; }
+    .badge-statut.erreur { background: rgba(239,68,68,0.25); border-color: #ef4444; }
+
+    /* ── Zone principale ── */
+    main {
+      flex: 1;
+      display: flex;
+      gap: 0;
+      overflow: hidden;
+    }
+
+    /* ── Panneau latéral ── */
+    aside {
+      width: 240px;
+      background: var(--blanc);
+      border-right: 1px solid var(--gris-bord);
+      padding: 20px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      flex-shrink: 0;
+      overflow-y: auto;
+    }
+
+    aside h2 {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--texte-sec);
+    }
+
+    .mode-selector { display: flex; flex-direction: column; gap: 8px; }
+
+    .mode-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 2px solid transparent;
+      background: var(--gris-fond);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.15s;
+      text-align: left;
+    }
+
+    .mode-btn:hover { background: var(--bleu-clair); }
+    .mode-btn.actif { border-color: var(--bleu-rf); background: var(--bleu-clair); color: var(--bleu-rf); }
+
+    .mode-btn .icone {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .mode-btn[data-mode="AUTO"] .icone { background: #ede9fe; }
+    .mode-btn[data-mode="RAG"]  .icone { background: var(--rag-bg); }
+    .mode-btn[data-mode="WEB"]  .icone { background: var(--web-bg); }
+    .mode-btn[data-mode="LLM"]  .icone { background: var(--llm-bg); }
+
+    .mode-desc { font-size: 11px; color: var(--texte-sec); line-height: 1.4; }
+
+    .separateur { height: 1px; background: var(--gris-bord); }
+
+    .exemples h2 { margin-bottom: 8px; }
+    .exemple-btn {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--gris-bord);
+      background: var(--blanc);
+      font-size: 12px;
+      color: var(--texte);
+      cursor: pointer;
+      margin-bottom: 6px;
+      transition: background 0.15s;
+      line-height: 1.4;
+    }
+    .exemple-btn:hover { background: var(--bleu-clair); border-color: var(--bleu-rf); }
+
+    /* ── Zone de chat ── */
+    .chat-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scroll-behavior: smooth;
+    }
+
+    /* Message d'accueil */
+    .accueil {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--texte-sec);
+    }
+
+    .accueil .emoji { font-size: 48px; margin-bottom: 16px; }
+    .accueil h2 { font-size: 20px; color: var(--texte); margin-bottom: 8px; }
+    .accueil p { font-size: 14px; line-height: 1.6; max-width: 400px; margin: 0 auto; }
+
+    /* Bulles de messages */
+    .message {
+      display: flex;
+      gap: 10px;
+      max-width: 85%;
+      animation: apparition 0.2s ease;
+    }
+
+    @keyframes apparition {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .message.utilisateur { align-self: flex-end; flex-direction: row-reverse; }
+    .message.assistant   { align-self: flex-start; }
+
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .message.utilisateur .avatar { background: var(--bleu-rf); color: var(--blanc); }
+    .message.assistant   .avatar { background: var(--gris-fond); border: 1px solid var(--gris-bord); }
+
+    .bulle {
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      line-height: 1.6;
+      max-width: 100%;
+    }
+
+    .message.utilisateur .bulle {
+      background: var(--bleu-rf);
+      color: var(--blanc);
+      border-bottom-right-radius: 4px;
+    }
+
+    .message.assistant .bulle {
+      background: var(--blanc);
+      border: 1px solid var(--gris-bord);
+      border-bottom-left-radius: 4px;
+      box-shadow: var(--shadow);
+    }
+
+    /* Badge de mode sur les réponses */
+    .badge-mode {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 2px 8px;
+      border-radius: 20px;
+      margin-bottom: 8px;
+    }
+
+    .badge-mode.RAG { background: var(--rag-bg); color: var(--rag-bord); border: 1px solid var(--rag-bord); }
+    .badge-mode.WEB { background: var(--web-bg); color: var(--web-bord); border: 1px solid var(--web-bord); }
+    .badge-mode.LLM { background: var(--llm-bg); color: var(--llm-bord); border: 1px solid var(--llm-bord); }
+
+    /* Contenu markdown simplifié */
+    .bulle-contenu p  { margin-bottom: 8px; }
+    .bulle-contenu p:last-child { margin-bottom: 0; }
+    .bulle-contenu strong { font-weight: 600; }
+    .bulle-contenu ul, .bulle-contenu ol { padding-left: 20px; margin-bottom: 8px; }
+    .bulle-contenu li { margin-bottom: 4px; }
+
+    /* Indicateur de frappe */
+    .frappe {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      padding: 12px 16px;
+    }
+
+    .frappe span {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--texte-sec);
+      animation: rebond 1.2s infinite;
+    }
+
+    .frappe span:nth-child(2) { animation-delay: 0.2s; }
+    .frappe span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes rebond {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30%            { transform: translateY(-6px); opacity: 1; }
+    }
+
+    /* ── Zone de saisie ── */
+    .saisie-zone {
+      padding: 16px 24px;
+      background: var(--blanc);
+      border-top: 1px solid var(--gris-bord);
+      flex-shrink: 0;
+    }
+
+    .saisie-inner {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      background: var(--gris-fond);
+      border: 2px solid var(--gris-bord);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      transition: border-color 0.15s;
+    }
+
+    .saisie-inner:focus-within { border-color: var(--bleu-rf); }
+
+    #input-question {
+      flex: 1;
+      border: none;
+      background: transparent;
+      font-size: 14px;
+      color: var(--texte);
+      resize: none;
+      outline: none;
+      min-height: 24px;
+      max-height: 120px;
+      line-height: 1.5;
+      font-family: inherit;
+    }
+
+    #input-question::placeholder { color: var(--texte-sec); }
+
+    #btn-envoyer {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: none;
+      background: var(--bleu-rf);
+      color: var(--blanc);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    #btn-envoyer:hover  { background: #002070; }
+    #btn-envoyer:active { transform: scale(0.95); }
+    #btn-envoyer:disabled { background: var(--gris-bord); cursor: not-allowed; }
+
+    .saisie-info {
+      font-size: 11px;
+      color: var(--texte-sec);
+      margin-top: 6px;
+      text-align: center;
+    }
+
+    /* ── Responsive mobile ── */
+    @media (max-width: 640px) {
+      aside { display: none; }
+      .messages { padding: 16px; }
+      .saisie-zone { padding: 12px 16px; }
+      .message { max-width: 95%; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- En-tête -->
+<header>
+  <div class="logo-rf">
+    <div class="bande"></div>
+    <span>République<br>Française</span>
+  </div>
+  <h1>Assistant Recensement de la Population</h1>
+  <span class="badge-statut" id="badge-statut">Connexion...</span>
+</header>
+
+<main>
+  <!-- Panneau latéral -->
+  <aside>
+    <div>
+      <h2>Mode de recherche</h2>
+      <div class="mode-selector">
+        <button class="mode-btn actif" data-mode="AUTO" onclick="setMode('AUTO')">
+          <div class="icone">🔀</div>
+          <div>
+            <div>Automatique</div>
+            <div class="mode-desc">L'IA choisit la meilleure source</div>
+          </div>
+        </button>
+        <button class="mode-btn" data-mode="RAG" onclick="setMode('RAG')">
+          <div class="icone">📂</div>
+          <div>
+            <div>Mes documents</div>
+            <div class="mode-desc">Formations, consignes, procédures</div>
+          </div>
+        </button>
+        <button class="mode-btn" data-mode="WEB" onclick="setMode('WEB')">
+          <div class="icone">🌐</div>
+          <div>
+            <div>Recherche web</div>
+            <div class="mode-desc">Décrets, lois, actualités</div>
+          </div>
+        </button>
+        <button class="mode-btn" data-mode="LLM" onclick="setMode('LLM')">
+          <div class="icone">✍️</div>
+          <div>
+            <div>Rédaction libre</div>
+            <div class="mode-desc">Courriers, reformulations</div>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <div class="separateur"></div>
+
+    <div class="exemples">
+      <h2>Questions exemples</h2>
+      <button class="exemple-btn" onclick="poserExemple(this)">À quoi sert une tournée de reconnaissance ?</button>
+      <button class="exemple-btn" onclick="poserExemple(this)">Quel est le rôle du coordonnateur communal ?</button>
+      <button class="exemple-btn" onclick="poserExemple(this)">Comment contrôler une tournée de recensement ?</button>
+      <button class="exemple-btn" onclick="poserExemple(this)">Rédige un courrier à un maire pour l'informer du calendrier de recensement</button>
+      <button class="exemple-btn" onclick="poserExemple(this)">Quel décret encadre le recensement de la population ?</button>
+    </div>
+  </aside>
+
+  <!-- Zone de chat -->
+  <div class="chat-container">
+    <div class="messages" id="messages">
+      <div class="accueil" id="accueil">
+        <div class="emoji">🏛️</div>
+        <h2>Bonjour, comment puis-je vous aider ?</h2>
+        <p>Posez vos questions sur le recensement de la population : procédures, formations, rôles des agents, réglementation...</p>
+      </div>
+    </div>
+
+    <div class="saisie-zone">
+      <div class="saisie-inner">
+        <textarea
+          id="input-question"
+          placeholder="Posez votre question sur le recensement..."
+          rows="1"
+          onkeydown="gererTouche(event)"
+          oninput="ajusterHauteur(this)"
+        ></textarea>
+        <button id="btn-envoyer" onclick="envoyerMessage()" title="Envoyer (Entrée)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+      <div class="saisie-info">Appuyez sur <kbd>Entrée</kbd> pour envoyer · <kbd>Maj+Entrée</kbd> pour un saut de ligne</div>
+    </div>
+  </div>
+</main>
+
+<script>
+  let modeActuel = "AUTO";
+  let enCours = false;
+
+  // ── Vérification du statut au démarrage ──
+  async function verifierStatut() {
+    try {
+      const r = await fetch("/health");
+      const data = await r.json();
+      const badge = document.getElementById("badge-statut");
+      if (data.status === "ok") {
+        badge.textContent = "Prêt";
+        badge.className = "badge-statut pret";
+      } else {
+        badge.textContent = "Initialisation...";
+        setTimeout(verifierStatut, 3000);
+      }
+    } catch {
+      setTimeout(verifierStatut, 3000);
+    }
+  }
+
+  verifierStatut();
+
+  // ── Sélection du mode ──
+  function setMode(mode) {
+    modeActuel = mode;
+    document.querySelectorAll(".mode-btn").forEach(b => {
+      b.classList.toggle("actif", b.dataset.mode === mode);
+    });
+  }
+
+  // ── Questions exemples ──
+  function poserExemple(btn) {
+    document.getElementById("input-question").value = btn.textContent;
+    envoyerMessage();
+  }
+
+  // ── Ajustement automatique de la hauteur du textarea ──
+  function ajusterHauteur(el) {
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+  }
+
+  // ── Gestion de la touche Entrée ──
+  function gererTouche(e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      envoyerMessage();
+    }
+  }
+
+  // ── Envoi du message ──
+  async function envoyerMessage() {
+    const input = document.getElementById("input-question");
+    const question = input.value.trim();
+    if (!question || enCours) return;
+
+    enCours = true;
+    document.getElementById("btn-envoyer").disabled = true;
+    input.value = "";
+    input.style.height = "auto";
+
+    // Masquer l'accueil
+    const accueil = document.getElementById("accueil");
+    if (accueil) accueil.remove();
+
+    // Afficher la question
+    ajouterMessage("utilisateur", question);
+
+    // Afficher l'indicateur de frappe
+    const idFrappe = afficherFrappe();
+
+    try {
+      const r = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question, mode_force: modeActuel })
+      });
+
+      supprimerFrappe(idFrappe);
+
+      if (!r.ok) {
+        const err = await r.json();
+        ajouterMessage("assistant", `⚠️ ${err.detail || "Une erreur est survenue."}`, null);
+      } else {
+        const data = await r.json();
+        ajouterMessage("assistant", data.reponse, data.mode);
+      }
+    } catch (e) {
+      supprimerFrappe(idFrappe);
+      ajouterMessage("assistant", "⚠️ Impossible de contacter le serveur. Vérifiez votre connexion.", null);
+    }
+
+    enCours = false;
+    document.getElementById("btn-envoyer").disabled = false;
+    input.focus();
+  }
+
+  // ── Ajout d'un message dans la conversation ──
+  function ajouterMessage(role, texte, mode) {
+    const zone = document.getElementById("messages");
+
+    const msg = document.createElement("div");
+    msg.className = `message ${role}`;
+
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.textContent = role === "utilisateur" ? "👤" : "🏛️";
+
+    const bulle = document.createElement("div");
+    bulle.className = "bulle";
+
+    if (role === "assistant" && mode) {
+      const badge = document.createElement("div");
+      badge.className = `badge-mode ${mode}`;
+      const icones = { RAG: "📂", WEB: "🌐", LLM: "✍️" };
+      const labels = { RAG: "Documents internes", WEB: "Recherche web", LLM: "Rédaction libre" };
+      badge.textContent = `${icones[mode] || ""} ${labels[mode] || mode}`;
+      bulle.appendChild(badge);
+    }
+
+    const contenu = document.createElement("div");
+    contenu.className = "bulle-contenu";
+    contenu.innerHTML = formaterMarkdown(texte);
+    bulle.appendChild(contenu);
+
+    msg.appendChild(avatar);
+    msg.appendChild(bulle);
+    zone.appendChild(msg);
+    zone.scrollTop = zone.scrollHeight;
+  }
+
+  // ── Indicateur de frappe ──
+  let compteurFrappe = 0;
+
+  function afficherFrappe() {
+    const id = ++compteurFrappe;
+    const zone = document.getElementById("messages");
+    const msg = document.createElement("div");
+    msg.className = "message assistant";
+    msg.id = `frappe-${id}`;
+    msg.innerHTML = `
+      <div class="avatar">🏛️</div>
+      <div class="bulle">
+        <div class="frappe">
+          <span></span><span></span><span></span>
+        </div>
+      </div>`;
+    zone.appendChild(msg);
+    zone.scrollTop = zone.scrollHeight;
+    return id;
+  }
+
+  function supprimerFrappe(id) {
+    const el = document.getElementById(`frappe-${id}`);
+    if (el) el.remove();
+  }
+
+  // ── Formatage Markdown simplifié ──
+  function formaterMarkdown(texte) {
+    return texte
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*(.+?)\*/g, "<em>$1</em>")
+      .replace(/^### (.+)$/gm, "<strong>$1</strong>")
+      .replace(/^## (.+)$/gm, "<strong>$1</strong>")
+      .replace(/^# (.+)$/gm, "<strong>$1</strong>")
+      .replace(/^[\-\*] (.+)$/gm, "<li>$1</li>")
+      .replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>")
+      .replace(/\n\n+/g, "</p><p>")
+      .replace(/\n/g, "<br>")
+      .replace(/^(.+)$/, "<p>$1</p>");
+  }
+</script>
+</body>
+</html>
