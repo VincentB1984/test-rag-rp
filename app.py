@@ -17,7 +17,7 @@
 =============================================================
 """
 
-import os, zipfile, re
+import os, zipfile, re, threading, asyncio
 from typing import List
 from contextlib import asynccontextmanager
 
@@ -144,12 +144,11 @@ state = AppState()
 # INITIALISATION AU DÉMARRAGE
 # ─────────────────────────────────────────────────────────────
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+def initialiser_rag_background():
+    """Lance l'initialisation du RAG dans un thread séparé pour ne pas bloquer le démarrage du serveur."""
     print("\n" + "="*60)
-    print("  RAG RECENSEMENT — Initialisation...")
+    print("  RAG RECENSEMENT — Initialisation en arrière-plan...")
     print("="*60)
-
     try:
         # LLM Albert API
         state.llm = ChatOpenAI(
@@ -283,14 +282,18 @@ Réponse (un seul mot) :""")
         )
 
         state.pret = True
-        print("\n[OK] RAG prêt. Serveur démarré.\n")
-
+        print("\n[OK] RAG prêt.\n")
     except Exception as e:
         state.message_init = f"Erreur d'initialisation : {e}"
         print(f"[ERREUR] {e}")
         state.pret = False
 
-    yield  # L'application tourne ici
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Lancer l'initialisation dans un thread séparé pour ne pas bloquer le port
+    thread = threading.Thread(target=initialiser_rag_background, daemon=True)
+    thread.start()
+    yield  # Le serveur est immédiatement disponible, le RAG se charge en arrière-plani
 
 # ─────────────────────────────────────────────────────────────
 # APPLICATION FASTAPI
