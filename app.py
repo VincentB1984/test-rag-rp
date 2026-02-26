@@ -30,7 +30,7 @@ from pydantic import BaseModel
 from lxml import etree
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_openai import ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
@@ -158,10 +158,12 @@ def initialiser_rag_background():
             base_url=ALBERT_BASE_URL
         )
 
-        # Embeddings locaux
-        print("[INFO] Chargement du modèle d'embedding...")
-        embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+        # Embeddings via API OpenAI (léger, pas de téléchargement de modèle)
+        print("[INFO] Initialisation des embeddings OpenAI...")
+        embeddings = OpenAIEmbeddings(
+            model="text-embedding-3-small",
+            openai_api_key=ALBERT_API_KEY,
+            openai_api_base=ALBERT_BASE_URL
         )
 
         # Base vectorielle
