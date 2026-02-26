@@ -50,6 +50,11 @@ ALBERT_MODEL    = os.getenv("ALBERT_MODEL",    "mistralai/Mistral-Small-3.2-24B-
 DOCS_DIR        = os.getenv("DOCS_DIR",        "./documents")
 FAISS_INDEX     = os.getenv("FAISS_INDEX",     "faiss_index_recensement")
 
+# Création automatique des dossiers nécessaires au démarrage
+os.makedirs("static", exist_ok=True)
+os.makedirs("documents", exist_ok=True)
+os.makedirs("templates", exist_ok=True)
+
 # ─────────────────────────────────────────────────────────────
 # FONCTIONS D'EXTRACTION DE DOCUMENTS
 # ─────────────────────────────────────────────────────────────
@@ -161,7 +166,7 @@ def initialiser_rag_background():
         # Embeddings via API OpenAI (léger, pas de téléchargement de modèle)
         print("[INFO] Initialisation des embeddings OpenAI...")
         embeddings = OpenAIEmbeddings(
-            model="text-embedding-3-small",
+            model="BAAI/bge-m3",
             openai_api_key=ALBERT_API_KEY,
             openai_api_base=ALBERT_BASE_URL
         )
@@ -179,7 +184,6 @@ def initialiser_rag_background():
             if not documents:
                 state.message_init = "Aucun document trouvé dans le dossier configuré."
                 state.pret = False
-                yield
                 return
             splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
             chunks = splitter.split_documents(documents)
