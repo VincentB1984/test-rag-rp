@@ -12,3 +12,4 @@ duckduckgo-search>=7.0.0
 rank-bm25>=0.2.2
 pydantic>=2.10.0
 python-dotenv>=1.0.0
+python-multipart>=0.0.9
