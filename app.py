@@ -23,6 +23,9 @@ import os, zipfile, re, threading, shutil
 from typing import List
 from contextlib import asynccontextmanager
 
+import requests as _requests
+from langchain_core.embeddings import Embeddings as _LCEmbeddings
+
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
@@ -32,7 +35,6 @@ from pydantic import BaseModel
 from lxml import etree
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings
 from langchain_openai import ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
@@ -40,6 +42,62 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.documents import Document
+
+
+# ─────────────────────────────────────────────────────────────
+# CLASSE D'EMBEDDINGS PERSONNALISÉE POUR ALBERT API
+# (contourne le SDK openai qui force encoding_format=base64)
+# ─────────────────────────────────────────────────────────────
+
+class AlbertEmbeddings(_LCEmbeddings):
+    """
+    Classe d'embeddings qui appelle directement l'API Albert
+    avec encoding_format='float', sans passer par le SDK openai
+    qui force base64 par défaut.
+    """
+
+    def __init__(self, api_key: str, base_url: str, model: str):
+        self._api_key  = api_key
+        self._base_url = base_url.rstrip("/")
+        self._model    = model
+        self._headers  = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _embed(self, texts: List[str]) -> List[List[float]]:
+        """Appel HTTP direct à /embeddings avec encoding_format=float."""
+        # Traitement par lots de 32 pour éviter les timeouts
+        all_embeddings = []
+        batch_size = 32
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+            payload = {
+                "model": self._model,
+                "input": batch,
+                "encoding_format": "float",
+            }
+            resp = _requests.post(
+                f"{self._base_url}/embeddings",
+                headers=self._headers,
+                json=payload,
+                timeout=120,
+            )
+            if not resp.ok:
+                raise RuntimeError(
+                    f"Albert Embeddings API error {resp.status_code}: {resp.text[:500]}"
+                )
+            data = resp.json()
+            # Trier par index pour garantir l'ordre
+            items = sorted(data["data"], key=lambda x: x["index"])
+            all_embeddings.extend(item["embedding"] for item in items)
+        return all_embeddings
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        return self._embed(texts)
+
+    def embed_query(self, text: str) -> List[float]:
+        return self._embed([text])[0]
 
 # ─────────────────────────────────────────────────────────────
 # CONFIGURATION (via variables d'environnement ou valeurs par défaut)
@@ -182,11 +240,11 @@ def _construire_rag(forcer_reconstruction: bool = False):
             base_url=ALBERT_BASE_URL
         )
 
-        print("[INFO] Initialisation des embeddings...")
-        embeddings = OpenAIEmbeddings(
+        print("[INFO] Initialisation des embeddings (AlbertEmbeddings avec encoding_format=float)...")
+        embeddings = AlbertEmbeddings(
+            api_key=ALBERT_API_KEY,
+            base_url=ALBERT_BASE_URL,
             model=EMBED_MODEL,
-            openai_api_key=ALBERT_API_KEY,
-            openai_api_base=ALBERT_BASE_URL
         )
 
         # Base vectorielle
@@ -585,18 +643,33 @@ async def admin_page():
     const data = await r.json();
     log.textContent += data.message + '\\n';
 
-    // Polling du statut
+    // Polling du statut toutes les 5 secondes
     const poll = setInterval(async () => {{
-      const s = await fetch('/health');
-      const sd = await s.json();
-      log.textContent += `Statut : ${{sd.status}} — ${{sd.message || ''}}\\n`;
-      log.scrollTop = log.scrollHeight;
-      if (sd.status === 'ok' || (!sd.status.includes('construction') && sd.status !== 'attente')) {{
-        clearInterval(poll);
-        log.textContent += '✅ Reconstruction terminée !\\n';
-        setTimeout(() => location.reload(), 1000);
+      try {{
+        const s = await fetch('/health');
+        const sd = await s.json();
+        log.textContent += `Statut : ${{sd.status}} — ${{sd.message || (sd.nb_chunks ? sd.nb_chunks + ' chunks' : '')}}\n`;
+        log.scrollTop = log.scrollHeight;
+        if (sd.status === 'ok') {{
+          clearInterval(poll);
+          log.textContent += '✅ Reconstruction terminée !\n';
+          setTimeout(() => location.reload(), 1500);
+        }} else if (sd.status === 'attente') {{
+          // Le RAG n'est plus en construction : soit erreur, soit pas de docs
+          clearInterval(poll);
+          if (sd.message && sd.message.includes('Erreur')) {{
+            log.textContent += `❌ Erreur : ${{sd.message}}\n`;
+          }} else if (sd.message) {{
+            log.textContent += `⚠️ Arrêt : ${{sd.message}}\n`;
+          }} else {{
+            log.textContent += '⚠️ Construction terminée avec statut inconnu.\n';
+          }}
+          setTimeout(() => location.reload(), 2000);
+        }}
+      }} catch(e) {{
+        log.textContent += 'Erreur réseau, nouvelle tentative...\n';
       }}
-    }}, 3000);
+    }}, 5000);
   }}
 </script>
 </body>
