@@ -103,7 +103,7 @@ class AlbertEmbeddings(_LCEmbeddings):
 # CONFIGURATION (via variables d'environnement ou valeurs par défaut)
 # ─────────────────────────────────────────────────────────────
 
-ALBERT_API_KEY  = os.getenv("ALBERT_API_KEY",  "COLLEZ_VOTRE_CLE_ALBERT_ICI")
+ALBERT_API_KEY  = os.getenv("ALBERT_API_KEY",  "sk-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo5MzMzLCJ0b2tlbl9pZCI6MTUwOTIsImV4cGlyZXMiOjE3OTg2NzE2MDB9.IrqDOCL-mq2sgvcUuj8VAlzEtynZKWuBpvo2idfS1ak")
 ALBERT_BASE_URL = os.getenv("ALBERT_BASE_URL", "https://albert.api.etalab.gouv.fr/v1")
 ALBERT_MODEL    = os.getenv("ALBERT_MODEL",    "mistralai/Mistral-Small-3.2-24B-Instruct-2506")
 EMBED_MODEL     = os.getenv("EMBED_MODEL",     "BAAI/bge-m3")
