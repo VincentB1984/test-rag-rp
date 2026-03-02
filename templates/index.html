@@ -155,23 +155,31 @@
 
     .separateur { height: 1px; background: var(--gris-bord); }
 
-    .exemples h2 { margin-bottom: 8px; }
-    .exemple-btn {
-      display: block;
-      width: 100%;
-      text-align: left;
-      padding: 8px 10px;
+    .exemples h2 { margin-bottom: 10px; }
+    .domaines-intro {
+      font-size: 12px;
+      color: var(--texte-leger);
+      margin-bottom: 10px;
+      line-height: 1.5;
+    }
+    .domaine-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 7px 10px;
       border-radius: 6px;
       border: 1px solid var(--gris-bord);
       background: var(--blanc);
       font-size: 12px;
       color: var(--texte);
-      cursor: pointer;
       margin-bottom: 6px;
-      transition: background 0.15s;
       line-height: 1.4;
     }
-    .exemple-btn:hover { background: var(--bleu-clair); border-color: var(--bleu-rf); }
+    .domaine-item::before {
+      content: "📄";
+      flex-shrink: 0;
+      font-size: 13px;
+    }
 
     /* ── Zone de chat ── */
     .chat-container {
@@ -427,12 +435,14 @@
     <div class="separateur"></div>
 
     <div class="exemples">
-      <h2>Questions exemples</h2>
-      <button class="exemple-btn" onclick="poserExemple(this)">À quoi sert une tournée de reconnaissance ?</button>
-      <button class="exemple-btn" onclick="poserExemple(this)">Quel est le rôle du coordonnateur communal ?</button>
-      <button class="exemple-btn" onclick="poserExemple(this)">Comment contrôler une tournée de recensement ?</button>
-      <button class="exemple-btn" onclick="poserExemple(this)">Rédige un courrier à un maire pour l'informer du calendrier de recensement</button>
-      <button class="exemple-btn" onclick="poserExemple(this)">Quel décret encadre le recensement de la population ?</button>
+      <h2>Documents disponibles</h2>
+      <p class="domaines-intro">Cet assistant a connaissance des documents suivants :</p>
+      <div class="domaine-item">Formations des agents recenseurs</div>
+      <div class="domaine-item">Formations des communautés (enquêteurs et superviseurs)</div>
+      <div class="domaine-item">Formations des coordinateurs communaux</div>
+      <div class="domaine-item">Expertises des populations de référence</div>
+      <div class="domaine-item">Formations des superviseurs</div>
+      <div class="domaine-item">Formations des nouveaux arrivants dans la sphère RP</div>
     </div>
   </aside>
 
@@ -497,12 +507,6 @@
     document.querySelectorAll(".mode-btn").forEach(b => {
       b.classList.toggle("actif", b.dataset.mode === mode);
     });
-  }
-
-  // ── Questions exemples ──
-  function poserExemple(btn) {
-    document.getElementById("input-question").value = btn.textContent;
-    envoyerMessage();
   }
 
   // ── Ajustement automatique de la hauteur du textarea ──
