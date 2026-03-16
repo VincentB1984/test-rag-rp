@@ -111,6 +111,9 @@ DOCS_DIR        = os.getenv("DOCS_DIR",        "./documents")
 FAISS_INDEX     = os.getenv("FAISS_INDEX",     "faiss_index_recensement")
 UPLOAD_SECRET   = os.getenv("UPLOAD_SECRET",   "")   # laisser vide = pas de protection
 
+# Extensions de fichiers supportées pour l'indexation
+EXTENSIONS_SUPPORTEES = ('.pdf', '.odp', '.odt', '.xls', '.xlsx', '.ods')
+
 # Création automatique des dossiers nécessaires au démarrage
 os.makedirs("static",    exist_ok=True)
 os.makedirs("documents", exist_ok=True)
@@ -126,6 +129,7 @@ def extraire_tout_texte(element):
     return ' '.join(p.strip() for p in element.itertext() if p.strip())
 
 def charger_odp_lxml(chemin):
+    """Extrait le texte d'un fichier ODP (présentation LibreOffice Impress)."""
     docs = []
     try:
         with zipfile.ZipFile(chemin, 'r') as z:
@@ -145,33 +149,138 @@ def charger_odp_lxml(chemin):
         print(f"  [WARN] ODP non lisible ({os.path.basename(chemin)}) : {e}")
     return docs
 
+
+def charger_odt(chemin):
+    """Extrait le texte d'un fichier ODT (document texte LibreOffice Writer)."""
+    docs = []
+    try:
+        from odf.opendocument import load as odf_load
+        from odf import teletype
+
+        doc_odf = odf_load(chemin)
+        contenu = teletype.extractText(doc_odf.text)
+        if contenu.strip():
+            docs.append(Document(
+                page_content=contenu.strip(),
+                metadata={"source": os.path.basename(chemin), "page": 1, "type": "odt"}
+            ))
+    except Exception as e:
+        print(f"  [WARN] ODT non lisible ({os.path.basename(chemin)}) : {e}")
+    return docs
+
+
+def charger_tableur(chemin):
+    """
+    Extrait le texte d'un fichier tableur (XLS, XLSX, ODS — LibreOffice Calc / Excel).
+    Chaque feuille devient un Document distinct.
+    """
+    docs = []
+    nom = os.path.basename(chemin)
+    ext = nom.lower().rsplit(".", 1)[-1]
+    try:
+        if ext == "xls":
+            # Format binaire Microsoft ancien (.xls) → xlrd
+            import xlrd
+            wb = xlrd.open_workbook(chemin)
+            for sheet in wb.sheets():
+                lignes = []
+                for row_idx in range(sheet.nrows):
+                    cellules = [str(sheet.cell_value(row_idx, col)).strip()
+                                for col in range(sheet.ncols)]
+                    ligne = "\t".join(c for c in cellules if c)
+                    if ligne.strip():
+                        lignes.append(ligne)
+                contenu = "\n".join(lignes)
+                if contenu.strip():
+                    docs.append(Document(
+                        page_content=contenu,
+                        metadata={"source": nom, "sheet": sheet.name, "type": "xls"}
+                    ))
+        else:
+            # Format XML Microsoft (.xlsx) ou OpenDocument Calc (.ods) → openpyxl
+            import openpyxl
+            wb = openpyxl.load_workbook(chemin, read_only=True, data_only=True)
+            for sheet_name in wb.sheetnames:
+                ws = wb[sheet_name]
+                lignes = []
+                for row in ws.iter_rows(values_only=True):
+                    cellules = [str(c).strip() for c in row if c is not None and str(c).strip()]
+                    if cellules:
+                        lignes.append("\t".join(cellules))
+                contenu = "\n".join(lignes)
+                if contenu.strip():
+                    docs.append(Document(
+                        page_content=contenu,
+                        metadata={"source": nom, "sheet": sheet_name, "type": ext}
+                    ))
+            wb.close()
+    except Exception as e:
+        print(f"  [WARN] Tableur non lisible ({nom}) : {e}")
+    return docs
+
+
 def charger_dossier(dossier):
+    """
+    Charge récursivement tous les documents supportés depuis `dossier`
+    et ses sous-dossiers (PDF, ODP, ODT, XLS, XLSX, ODS).
+    """
     tous = []
     if not os.path.isdir(dossier):
         print(f"  [WARN] Dossier introuvable : {dossier}")
         return tous
-    fichiers = [f for f in sorted(os.listdir(dossier))
-                if f.lower().endswith(('.pdf', '.odp'))]
-    if not fichiers:
-        print(f"  [WARN] Aucun fichier PDF/ODP dans : {dossier}")
+
+    # os.walk() parcourt le dossier racine ET tous ses sous-dossiers
+    fichiers_trouves = []
+    for racine, sous_dossiers, fichiers in os.walk(dossier):
+        sous_dossiers.sort()   # ordre alphabétique pour la reproductibilité
+        for nom in sorted(fichiers):
+            if nom.lower().endswith(EXTENSIONS_SUPPORTEES):
+                fichiers_trouves.append(os.path.join(racine, nom))
+
+    if not fichiers_trouves:
+        print(f"  [WARN] Aucun fichier {EXTENSIONS_SUPPORTEES} dans : {dossier} (y compris sous-dossiers)")
         return tous
-    for nom in fichiers:
-        chemin = os.path.join(dossier, nom)
+
+    print(f"  [INFO] {len(fichiers_trouves)} fichier(s) trouvé(s) dans {dossier} (récursif)")
+
+    for chemin in fichiers_trouves:
+        nom = os.path.basename(chemin)
+        # Chemin relatif pour les métadonnées (plus lisible)
+        chemin_relatif = os.path.relpath(chemin, dossier)
         ext = nom.lower().rsplit(".", 1)[-1]
         try:
             if ext == "pdf":
                 docs = PyPDFLoader(chemin).load()
                 for d in docs:
-                    d.metadata["type"] = "pdf"
-                print(f"  [OK] PDF : {nom} ({len(docs)} pages)")
+                    d.metadata["type"]   = "pdf"
+                    d.metadata["source"] = chemin_relatif
+                print(f"  [OK] PDF : {chemin_relatif} ({len(docs)} pages)")
+
             elif ext == "odp":
                 docs = charger_odp_lxml(chemin)
-                print(f"  [OK] ODP : {nom} ({len(docs)} slides)")
+                for d in docs:
+                    d.metadata["source"] = chemin_relatif
+                print(f"  [OK] ODP : {chemin_relatif} ({len(docs)} slides)")
+
+            elif ext == "odt":
+                docs = charger_odt(chemin)
+                for d in docs:
+                    d.metadata["source"] = chemin_relatif
+                print(f"  [OK] ODT : {chemin_relatif} ({len(docs)} doc(s))")
+
+            elif ext in ("xls", "xlsx", "ods"):
+                docs = charger_tableur(chemin)
+                for d in docs:
+                    d.metadata["source"] = chemin_relatif
+                print(f"  [OK] {ext.upper()} : {chemin_relatif} ({len(docs)} feuille(s))")
+
             else:
                 continue
+
             tous.extend(docs)
         except Exception as e:
-            print(f"  [SKIP] {nom} : {e}")
+            print(f"  [SKIP] {chemin_relatif} : {e}")
+
     return tous
 
 # ─────────────────────────────────────────────────────────────
@@ -265,8 +374,10 @@ def _construire_rag(forcer_reconstruction: bool = False):
         if not forcer_reconstruction and os.path.exists(FAISS_INDEX) and os.path.exists(faiss_file):
             print(f"[INFO] Chargement de la base vectorielle existante : {FAISS_INDEX}")
             vectorstore = FAISS.load_local(FAISS_INDEX, embeddings, allow_dangerous_deserialization=True)
+            # Reconstituer le BM25 depuis les documents du vectorstore
             docs_pour_bm25 = list(vectorstore.docstore._dict.values())
             bm25 = BM25Retriever.from_documents(docs_pour_bm25, k=10)
+            state.nb_docs   = len(set(d.metadata.get("source", "") for d in docs_pour_bm25))
             state.nb_chunks = len(docs_pour_bm25)
         else:
             print(f"[INFO] Construction depuis : {DOCS_DIR}")
@@ -274,7 +385,7 @@ def _construire_rag(forcer_reconstruction: bool = False):
             if not documents:
                 state.message_init = (
                     "Aucun document trouvé. "
-                    "Uploadez vos fichiers PDF/ODP via la page /admin."
+                    "Uploadez vos fichiers PDF/ODP/ODT/XLS/XLSX/ODS via la page /admin."
                 )
                 state.pret     = False
                 state.en_cours = False
@@ -302,8 +413,8 @@ def _construire_rag(forcer_reconstruction: bool = False):
             docs = retriever.invoke(question)
             return "\n---\n".join(
                 f"[{d.metadata.get('source','?')}, "
-                f"{'slide' if d.metadata.get('type')=='odp' else 'page'} "
-                f"{d.metadata.get('slide', d.metadata.get('page','?'))}]\n{d.page_content}"
+                f"{'slide' if d.metadata.get('type')=='odp' else 'feuille' if d.metadata.get('type') in ('xls','xlsx','ods') else 'page'} "
+                f"{d.metadata.get('slide', d.metadata.get('sheet', d.metadata.get('page','?')))}]\n{d.page_content}"
                 for d in docs
             )
 
@@ -501,8 +612,13 @@ async def admin_page():
     """Page d'administration pour uploader les documents."""
     fichiers = []
     if os.path.isdir(DOCS_DIR):
-        fichiers = [f for f in sorted(os.listdir(DOCS_DIR))
-                    if f.lower().endswith(('.pdf', '.odp'))]
+        # Lister récursivement tous les fichiers supportés avec leur chemin relatif
+        for racine, sous_dossiers, noms in os.walk(DOCS_DIR):
+            sous_dossiers.sort()
+            for nom in sorted(noms):
+                if nom.lower().endswith(EXTENSIONS_SUPPORTEES):
+                    chemin_relatif = os.path.relpath(os.path.join(racine, nom), DOCS_DIR)
+                    fichiers.append(chemin_relatif)
 
     statut_rag = (
         f"<span style='color:#10b981'>✅ Prêt — {state.nb_chunks} chunks indexés</span>"
@@ -588,15 +704,15 @@ async def admin_page():
 
   <!-- Upload -->
   <div class="card">
-    <h2>Uploader des documents (PDF ou ODP)</h2>
+    <h2>Uploader des documents</h2>
     <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()"
          ondragover="event.preventDefault();this.classList.add('survol')"
          ondragleave="this.classList.remove('survol')"
          ondrop="gererDrop(event)">
       <div style="font-size:36px;margin-bottom:8px">📂</div>
       <div style="font-size:15px;font-weight:600;margin-bottom:4px">Cliquez ou glissez vos fichiers ici</div>
-      <div style="font-size:12px">Formats acceptés : PDF, ODP (LibreOffice Impress)</div>
-      <input type="file" id="fileInput" multiple accept=".pdf,.odp" onchange="uploaderFichiers(this.files)">
+      <div style="font-size:12px">Formats acceptés : PDF, ODP, ODT, XLS, XLSX, ODS</div>
+      <input type="file" id="fileInput" multiple accept=".pdf,.odp,.odt,.xls,.xlsx,.ods" onchange="uploaderFichiers(this.files)">
     </div>
     <div id="progression" style="margin-top:12px;font-size:13px;color:#6b7280"></div>
   </div>
@@ -694,13 +810,14 @@ async def admin_page():
 
 @app.post("/admin/upload")
 async def upload_documents(files: List[UploadFile] = File(...)):
-    """Reçoit des fichiers PDF/ODP et les sauvegarde dans DOCS_DIR."""
+    """Reçoit des fichiers et les sauvegarde dans DOCS_DIR."""
     os.makedirs(DOCS_DIR, exist_ok=True)
     sauvegardes = []
+    extensions_valides = {ext.lstrip('.') for ext in EXTENSIONS_SUPPORTEES}
     for f in files:
         nom = f.filename or "fichier_inconnu"
         ext = nom.lower().rsplit(".", 1)[-1] if "." in nom else ""
-        if ext not in ("pdf", "odp"):
+        if ext not in extensions_valides:
             continue
         dest = os.path.join(DOCS_DIR, nom)
         contenu = await f.read()
@@ -710,7 +827,10 @@ async def upload_documents(files: List[UploadFile] = File(...)):
         print(f"[UPLOAD] Sauvegardé : {dest} ({len(contenu)} octets)")
 
     if not sauvegardes:
-        raise HTTPException(status_code=400, detail="Aucun fichier PDF ou ODP valide reçu.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Aucun fichier valide reçu. Formats acceptés : {', '.join(sorted(extensions_valides)).upper()}"
+        )
 
     # Lancer la reconstruction du RAG en arrière-plan
     initialiser_rag_background(forcer=True)
@@ -723,11 +843,14 @@ async def upload_documents(files: List[UploadFile] = File(...)):
 
 @app.post("/admin/supprimer")
 async def supprimer_document(payload: dict):
-    """Supprime un document du dossier DOCS_DIR."""
+    """Supprime un document du dossier DOCS_DIR (supporte les chemins relatifs avec sous-dossiers)."""
     nom = payload.get("nom", "")
-    if not nom or "/" in nom or "\\" in nom:
+    if not nom:
         raise HTTPException(status_code=400, detail="Nom de fichier invalide.")
-    chemin = os.path.join(DOCS_DIR, nom)
+    # Sécurité : empêcher les path traversal (../)
+    chemin = os.path.normpath(os.path.join(DOCS_DIR, nom))
+    if not chemin.startswith(os.path.normpath(DOCS_DIR)):
+        raise HTTPException(status_code=400, detail="Chemin de fichier non autorisé.")
     if not os.path.exists(chemin):
         raise HTTPException(status_code=404, detail="Fichier introuvable.")
     os.remove(chemin)
