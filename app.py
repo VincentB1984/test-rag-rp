@@ -402,22 +402,37 @@ def _construire_rag(forcer_reconstruction: bool = False):
             model=EMBED_MODEL,
         )
 
-        # ── Recoller les morceaux de index.faiss si nécessaire ──
-        faiss_file   = os.path.join(FAISS_INDEX, "index.faiss")
-        manifest_file = faiss_file + ".manifest"
-        if os.path.exists(manifest_file) and not os.path.exists(faiss_file):
-            print("[INFO] Reconstitution de index.faiss depuis les morceaux...")
-            with open(manifest_file) as mf:
-                nb_parts = int(mf.read().strip())
-            with open(faiss_file, "wb") as out:
-                for i in range(nb_parts):
-                    part_path = f"{faiss_file}.part{i:02d}"
-                    with open(part_path, "rb") as pf:
-                        out.write(pf.read())
-            print(f"[INFO] index.faiss reconstitué ({nb_parts} morceaux)")
+        # ── Recoller les morceaux si nécessaire (index.faiss ET index.pkl) ──
+        def reconstituer_depuis_parts(fichier_cible: str):
+            """
+            Si <fichier_cible>.manifest existe et que <fichier_cible> est absent,
+            recolle les morceaux <fichier_cible>.part00, .part01, ... en un seul fichier.
+            """
+            manifest = fichier_cible + ".manifest"
+            if os.path.exists(manifest) and not os.path.exists(fichier_cible):
+                nom = os.path.basename(fichier_cible)
+                print(f"[INFO] Reconstitution de {nom} depuis les morceaux...")
+                with open(manifest) as mf:
+                    nb_parts = int(mf.read().strip())
+                with open(fichier_cible, "wb") as out:
+                    for i in range(nb_parts):
+                        part_path = f"{fichier_cible}.part{i:02d}"
+                        if not os.path.exists(part_path):
+                            raise FileNotFoundError(
+                                f"Morceau manquant : {part_path} "
+                                f"(attendu {nb_parts} morceaux selon le manifest)"
+                            )
+                        with open(part_path, "rb") as pf:
+                            out.write(pf.read())
+                print(f"[INFO] {nom} reconstitué ({nb_parts} morceaux)")
+
+        faiss_file = os.path.join(FAISS_INDEX, "index.faiss")
+        pkl_file   = os.path.join(FAISS_INDEX, "index.pkl")
+        reconstituer_depuis_parts(faiss_file)
+        reconstituer_depuis_parts(pkl_file)
 
         # Base vectorielle
-        if not forcer_reconstruction and os.path.exists(FAISS_INDEX) and os.path.exists(faiss_file):
+        if not forcer_reconstruction and os.path.exists(FAISS_INDEX) and os.path.exists(faiss_file) and os.path.exists(pkl_file):
             print(f"[INFO] Chargement de la base vectorielle existante : {FAISS_INDEX}")
             vectorstore = FAISS.load_local(FAISS_INDEX, embeddings, allow_dangerous_deserialization=True)
             # Reconstituer le BM25 depuis les documents du vectorstore
