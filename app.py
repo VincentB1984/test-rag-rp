@@ -431,13 +431,30 @@ def _construire_rag(forcer_reconstruction: bool = False):
         reconstituer_depuis_parts(faiss_file)
         reconstituer_depuis_parts(pkl_file)
 
+        # ── Diagnostic mémoire ──
+        try:
+            import resource
+            mem_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+            print(f"[INFO] Mémoire utilisée avant chargement FAISS : {mem_mb:.0f} Mo")
+        except Exception:
+            pass
+
         # Base vectorielle
         if not forcer_reconstruction and os.path.exists(FAISS_INDEX) and os.path.exists(faiss_file) and os.path.exists(pkl_file):
+            taille_faiss = os.path.getsize(faiss_file) / 1024 / 1024
+            taille_pkl   = os.path.getsize(pkl_file)   / 1024 / 1024
             print(f"[INFO] Chargement de la base vectorielle existante : {FAISS_INDEX}")
+            print(f"[INFO]   index.faiss : {taille_faiss:.1f} Mo")
+            print(f"[INFO]   index.pkl   : {taille_pkl:.1f} Mo")
+            print(f"[INFO]   Total       : {taille_faiss + taille_pkl:.1f} Mo")
+            print("[INFO] FAISS.load_local() en cours...")
             vectorstore = FAISS.load_local(FAISS_INDEX, embeddings, allow_dangerous_deserialization=True)
+            print("[INFO] FAISS.load_local() terminé, extraction des documents...")
             # Reconstituer le BM25 depuis les documents du vectorstore
             docs_pour_bm25 = list(vectorstore.docstore._dict.values())
+            print(f"[INFO] {len(docs_pour_bm25)} chunks extraits, construction BM25...")
             bm25 = BM25Retriever.from_documents(docs_pour_bm25, k=10)
+            print("[INFO] BM25 construit.")
             state.nb_docs   = len(set(d.metadata.get("source", "") for d in docs_pour_bm25))
             state.nb_chunks = len(docs_pour_bm25)
         else:
