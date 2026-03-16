@@ -37,7 +37,6 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import ChatOpenAI
 from langchain_community.vectorstores import FAISS
-from langchain_community.retrievers import BM25Retriever
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
@@ -330,25 +329,17 @@ def charger_dossier(dossier):
     return tous
 
 # ─────────────────────────────────────────────────────────────
-# CLASSE RETRIEVER HYBRIDE (BM25 + Vectoriel)
+# CLASSE RETRIEVER VECTORIEL
 # ─────────────────────────────────────────────────────────────
 
-class RetrieverHybride:
-    def __init__(self, vectorstore, bm25, k=10):
-        self.vs   = vectorstore
-        self.bm25 = bm25
-        self.k    = k
+class RetrieverVectoriel:
+    """Retriever vectoriel seul (sans BM25) pour minimiser l'empreinte mémoire."""
+    def __init__(self, vectorstore, k=10):
+        self.vs = vectorstore
+        self.k  = k
 
     def invoke(self, question):
-        res_vec  = self.vs.similarity_search(question, k=self.k)
-        res_bm25 = self.bm25.invoke(question)[:self.k]
-        vus, uniques = set(), []
-        for d in res_vec + res_bm25:
-            cle = d.page_content[:80]
-            if cle not in vus:
-                vus.add(cle)
-                uniques.append(d)
-        return uniques[:self.k]
+        return self.vs.similarity_search(question, k=self.k)
 
 # ─────────────────────────────────────────────────────────────
 # ÉTAT GLOBAL DE L'APPLICATION
@@ -407,6 +398,8 @@ def _construire_rag(forcer_reconstruction: bool = False):
             """
             Si <fichier_cible>.manifest existe et que <fichier_cible> est absent,
             recolle les morceaux <fichier_cible>.part00, .part01, ... en un seul fichier.
+            Copie par blocs de 4 Mo pour limiter la consommation mémoire.
+            Supprime les morceaux après reconstitution pour libérer l'espace disque.
             """
             manifest = fichier_cible + ".manifest"
             if os.path.exists(manifest) and not os.path.exists(fichier_cible):
@@ -422,9 +415,17 @@ def _construire_rag(forcer_reconstruction: bool = False):
                                 f"Morceau manquant : {part_path} "
                                 f"(attendu {nb_parts} morceaux selon le manifest)"
                             )
+                        # Copie par blocs de 4 Mo pour éviter de tout charger en RAM
                         with open(part_path, "rb") as pf:
-                            out.write(pf.read())
-                print(f"[INFO] {nom} reconstitué ({nb_parts} morceaux)")
+                            while True:
+                                bloc = pf.read(4 * 1024 * 1024)  # 4 Mo
+                                if not bloc:
+                                    break
+                                out.write(bloc)
+                        # Supprimer le morceau immédiatement pour libérer l'espace disque
+                        os.remove(part_path)
+                os.remove(manifest)
+                print(f"[INFO] {nom} reconstitué ({nb_parts} morceaux, morceaux supprimés)")
 
         faiss_file = os.path.join(FAISS_INDEX, "index.faiss")
         pkl_file   = os.path.join(FAISS_INDEX, "index.pkl")
@@ -450,13 +451,11 @@ def _construire_rag(forcer_reconstruction: bool = False):
             print("[INFO] FAISS.load_local() en cours...")
             vectorstore = FAISS.load_local(FAISS_INDEX, embeddings, allow_dangerous_deserialization=True)
             print("[INFO] FAISS.load_local() terminé, extraction des documents...")
-            # Reconstituer le BM25 depuis les documents du vectorstore
-            docs_pour_bm25 = list(vectorstore.docstore._dict.values())
-            print(f"[INFO] {len(docs_pour_bm25)} chunks extraits, construction BM25...")
-            bm25 = BM25Retriever.from_documents(docs_pour_bm25, k=10)
-            print("[INFO] BM25 construit.")
-            state.nb_docs   = len(set(d.metadata.get("source", "") for d in docs_pour_bm25))
-            state.nb_chunks = len(docs_pour_bm25)
+            # Compter les docs et chunks sans garder la liste en mémoire
+            docs_iter = vectorstore.docstore._dict.values()
+            state.nb_chunks = len(vectorstore.docstore._dict)
+            state.nb_docs   = len(set(d.metadata.get("source", "") for d in docs_iter))
+            print(f"[INFO] {state.nb_chunks} chunks, {state.nb_docs} documents sources.")
         else:
             print(f"[INFO] Construction depuis : {DOCS_DIR}")
             documents = charger_dossier(DOCS_DIR)
@@ -481,11 +480,12 @@ def _construire_rag(forcer_reconstruction: bool = False):
 
             vectorstore = FAISS.from_documents(chunks, embeddings)
             vectorstore.save_local(FAISS_INDEX)
-            bm25 = BM25Retriever.from_documents(chunks, k=10)
             print(f"[INFO] Base sauvegardée : {FAISS_INDEX}")
+            state.nb_chunks = len(chunks)
+            state.nb_docs   = len(set(d.metadata.get("source", "") for d in documents))
 
-        # Retriever hybride
-        retriever = RetrieverHybride(vectorstore, bm25, k=10)
+        # Retriever vectoriel
+        retriever = RetrieverVectoriel(vectorstore, k=10)
 
         def recuperer_et_formater(question):
             docs = retriever.invoke(question)
