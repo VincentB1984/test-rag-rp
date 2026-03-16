@@ -171,8 +171,9 @@ def charger_odt(chemin):
 
 def charger_tableur(chemin):
     """
-    Extrait le texte d'un fichier tableur (XLS, XLSX, ODS — LibreOffice Calc / Excel).
+    Extrait le texte d'un fichier tableur XLS ou XLSX (Excel).
     Chaque feuille devient un Document distinct.
+    Note : les fichiers .ods sont traités par charger_ods() via odfpy.
     """
     docs = []
     nom = os.path.basename(chemin)
@@ -196,8 +197,8 @@ def charger_tableur(chemin):
                         page_content=contenu,
                         metadata={"source": nom, "sheet": sheet.name, "type": "xls"}
                     ))
-        else:
-            # Format XML Microsoft (.xlsx) ou OpenDocument Calc (.ods) → openpyxl
+        elif ext == "xlsx":
+            # Format XML Microsoft (.xlsx) → openpyxl
             import openpyxl
             wb = openpyxl.load_workbook(chemin, read_only=True, data_only=True)
             for sheet_name in wb.sheetnames:
@@ -211,11 +212,50 @@ def charger_tableur(chemin):
                 if contenu.strip():
                     docs.append(Document(
                         page_content=contenu,
-                        metadata={"source": nom, "sheet": sheet_name, "type": ext}
+                        metadata={"source": nom, "sheet": sheet_name, "type": "xlsx"}
                     ))
             wb.close()
     except Exception as e:
         print(f"  [WARN] Tableur non lisible ({nom}) : {e}")
+    return docs
+
+
+def charger_ods(chemin):
+    """
+    Extrait le texte d'un fichier ODS (LibreOffice Calc) via odfpy.
+    openpyxl ne supporte pas ce format malgré ce que sa doc indique.
+    Chaque feuille devient un Document distinct.
+    """
+    docs = []
+    nom = os.path.basename(chemin)
+    try:
+        from odf.opendocument import load as odf_load
+        from odf import teletype
+        from odf.table import Table, TableRow, TableCell
+
+        doc_odf = odf_load(chemin)
+        sheets = doc_odf.spreadsheet.getElementsByType(Table)
+        for sheet in sheets:
+            sheet_name = sheet.getAttribute("name") or "Feuille"
+            rows = sheet.getElementsByType(TableRow)
+            lignes = []
+            for row in rows:
+                cells = row.getElementsByType(TableCell)
+                cellules = []
+                for cell in cells:
+                    texte = teletype.extractText(cell).strip()
+                    if texte:
+                        cellules.append(texte)
+                if cellules:
+                    lignes.append("\t".join(cellules))
+            contenu = "\n".join(lignes)
+            if contenu.strip():
+                docs.append(Document(
+                    page_content=contenu,
+                    metadata={"source": nom, "sheet": sheet_name, "type": "ods"}
+                ))
+    except Exception as e:
+        print(f"  [WARN] ODS non lisible ({nom}) : {e}")
     return docs
 
 
@@ -268,11 +308,17 @@ def charger_dossier(dossier):
                     d.metadata["source"] = chemin_relatif
                 print(f"  [OK] ODT : {chemin_relatif} ({len(docs)} doc(s))")
 
-            elif ext in ("xls", "xlsx", "ods"):
+            elif ext in ("xls", "xlsx"):
                 docs = charger_tableur(chemin)
                 for d in docs:
                     d.metadata["source"] = chemin_relatif
                 print(f"  [OK] {ext.upper()} : {chemin_relatif} ({len(docs)} feuille(s))")
+
+            elif ext == "ods":
+                docs = charger_ods(chemin)
+                for d in docs:
+                    d.metadata["source"] = chemin_relatif
+                print(f"  [OK] ODS : {chemin_relatif} ({len(docs)} feuille(s))")
 
             else:
                 continue
