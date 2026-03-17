@@ -499,15 +499,20 @@ def _construire_rag(forcer_reconstruction: bool = False):
         # Chaîne RAG
         prompt_rag = ChatPromptTemplate.from_template(
             """Tu es un assistant expert du recensement de la population française.
-Réponds en français de manière précise et structurée, en te basant sur les extraits de documents fournis.
-Si les extraits contiennent des éléments pertinents, synthétise-les pour répondre à la question.
-Cite les sources (nom du fichier) quand c'est utile.
+Ta mission est de fournir des réponses complètes, détaillées et visuellement structurées en te basant UNIQUEMENT sur les extraits de documents fournis.
 
-Extraits de documents :
+RÈGLES DE RÉDACTION :
+1. Sois exhaustif : va au bout de la réflexion, n'hésite pas à faire des réponses longues si le contexte le justifie.
+2. Structure ta réponse avec des titres (###), des listes à puces ou numérotées, et mets en gras (**) les termes importants.
+3. Si la réponse nécessite des étapes ou des conditions, utilise des listes claires.
+4. CITATION DES SOURCES OBLIGATOIRE : à la fin de chaque paragraphe ou idée clé, cite le chemin exact du fichier source entre crochets, par exemple : [formation/module1.pdf].
+5. Si les extraits ne contiennent pas la réponse, dis-le explicitement plutôt que d'inventer.
+
+Extraits de documents (avec leurs chemins sources) :
 {context}
 
 Question : {question}
-Réponse :"""
+Réponse détaillée et structurée :"""
         )
         state.chaine_rag = (
             {"context": RunnableLambda(recuperer_et_formater), "question": RunnablePassthrough()}
