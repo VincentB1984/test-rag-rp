@@ -214,7 +214,7 @@
     .message {
       display: flex;
       gap: 10px;
-      max-width: 85%;
+      max-width: 90%;
       animation: apparition 0.2s ease;
     }
 
@@ -260,6 +260,43 @@
       border: 1px solid var(--gris-bord);
       border-bottom-left-radius: 4px;
       box-shadow: var(--shadow);
+    }
+    
+    /* Styles Markdown améliorés */
+    .bulle-contenu h3 {
+      font-size: 15px;
+      color: var(--bleu-rf);
+      margin: 16px 0 8px 0;
+      border-bottom: 1px solid var(--gris-bord);
+      padding-bottom: 4px;
+    }
+    .bulle-contenu h3:first-child { margin-top: 0; }
+    
+    .bulle-contenu p { margin-bottom: 12px; }
+    .bulle-contenu p:last-child { margin-bottom: 0; }
+    
+    .bulle-contenu ul, .bulle-contenu ol {
+      margin: 0 0 12px 24px;
+      padding: 0;
+    }
+    .bulle-contenu li { margin-bottom: 6px; }
+    
+    .bulle-contenu strong {
+      color: var(--bleu-rf);
+      font-weight: 600;
+    }
+    
+    .source-badge {
+      display: inline-block;
+      background: #f1f5f9;
+      color: #475569;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #cbd5e1;
+      margin: 0 2px;
+      font-family: monospace;
+      white-space: nowrap;
     }
 
     /* Badge de mode sur les réponses */
@@ -629,18 +666,30 @@
 
   // ── Formatage Markdown simplifié ──
   function formaterMarkdown(texte) {
-    return texte
+    let html = texte
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      // Titres
+      .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+      .replace(/^## (.+)$/gm, "<h3>$1</h3>")
+      .replace(/^# (.+)$/gm, "<h3>$1</h3>")
+      // Gras et italique
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
       .replace(/\*(.+?)\*/g, "<em>$1</em>")
-      .replace(/^### (.+)$/gm, "<strong>$1</strong>")
-      .replace(/^## (.+)$/gm, "<strong>$1</strong>")
-      .replace(/^# (.+)$/gm, "<strong>$1</strong>")
+      // Formatage des sources [chemin/fichier.pdf]
+      .replace(/\[(.*?\.(?:pdf|odp|odt|xls|xlsx|ods))\]/gi, "<span class='source-badge'>📄 $1</span>")
+      // Listes
       .replace(/^[\-\*] (.+)$/gm, "<li>$1</li>")
       .replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>")
+      // Paragraphes et retours à la ligne
       .replace(/\n\n+/g, "</p><p>")
-      .replace(/\n/g, "<br>")
-      .replace(/^(.+)$/, "<p>$1</p>");
+      .replace(/<br>/g, "") // Nettoyage
+      .replace(/\n(?!(?:<li|<ul|<\/ul|<h3))/g, "<br>");
+      
+    // Envelopper le tout si ce n'est pas déjà dans une balise
+    if (!html.startsWith("<p>") && !html.startsWith("<h3") && !html.startsWith("<ul")) {
+      html = "<p>" + html + "</p>";
+    }
+    return html;
   }
 </script>
 </body>
