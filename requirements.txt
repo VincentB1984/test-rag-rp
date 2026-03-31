@@ -4,31 +4,31 @@
 # Cela évite le téléchargement de 2Go de dépendances CUDA sur Render.
 
 # Serveur web
-fastapi==0.115.12
-uvicorn[standard]==0.34.0
-python-multipart==0.0.20
+fastapi
+uvicorn[standard]
+python-multipart
 
-# LangChain
-langchain==0.3.25
-langchain-community==0.3.23
-langchain-openai==0.3.16
-langchain-core==0.3.55
+# LangChain — versions sans contraintes pour éviter les conflits de dépendances
+langchain
+langchain-community
+langchain-openai
+langchain-core
 
 # Base vectorielle
-faiss-cpu==1.10.0
+faiss-cpu
 
 # Chargement de documents
-pypdf==5.4.0
-lxml==5.3.1
+pypdf
+lxml
 odfpy==1.4.1
-openpyxl==3.1.5
+openpyxl
 xlrd==2.0.1
 
 # Recherche web
-duckduckgo-search==7.5.3
+duckduckgo-search
 
 # HTTP
-requests==2.32.3
+requests
 
 # Utilitaires
-python-dotenv==1.1.0
+python-dotenv
